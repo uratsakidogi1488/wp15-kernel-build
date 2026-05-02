@@ -47,10 +47,19 @@ jobs:
         run: |
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           cd kernel/4.14.186
+          
+          # Очистка и создание конфига
           make O=out ARCH=arm64 wp15_defconfig
-          # Добавляем LLVM_IAS=0, чтобы обойти ошибку с флагом -EL
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LLVM_IAS=0 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KBUILD_CFLAGS_KERNEL="-Wno-error"
-
+          
+          # Основная сборка с исправлением ошибки -EL
+          make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LLVM_IAS=1 \
+            KBUILD_CFLAGS_KERNEL="-Wno-error"
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
