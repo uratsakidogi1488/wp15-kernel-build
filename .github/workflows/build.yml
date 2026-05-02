@@ -1,66 +1,65 @@
-name: Build Kernel WP15
+name: Build WP15 Kernel + KSU + NetHunter
 
-# Запуск сборки вручную по кнопке
-on: [workflow_dispatch]
+on:
+  workflow_dispatch: # Запуск вручную кнопкой
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
-
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout current repository (for defconfig)
+      - name: Checkout Config
         uses: actions/checkout@v3
 
-      - name: Setup Build Environment
+      - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev
+          sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libssl-dev libxml2 libxml2-utils lzop rsync schedtool squashfs-tools zip zlib1g-dev
 
-      - name: Download Toolchain (Proton-Clang)
-        run: |
-          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
+      - name: Clone Toolchain
+        run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Clone Donor Kernel Source
-        run: |
-          git clone --depth=1 https://github.com/whjddzyx/android_kernel_oppo_mtk6853.git kernel_source
+      - name: Clone Kernel Source
+        run: git clone --depth=1 https://github.com/whjddzyx/android_kernel_oppo_mtk6853.git kernel
 
-      - name: Inject KernelSU
+      - name: Integrate KernelSU
         run: |
-          cd kernel_source/4.14.186
+          cd kernel/4.14.186
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-      - name: Setup Config and NetHunter Flags
+      - name: Prepare Defconfig
         run: |
-          # Копируем твой конфиг в нужную папку исходников
-          cp wp15_defconfig kernel_source/4.14.186/arch/arm64/configs/wp15_defconfig
+          # Копируем твой файл из корня репо в папку ядра
+          cp wp15_defconfig kernel/4.14.186/arch/arm64/configs/wp15_defconfig
           
-          # Автоматически добавляем нужные флаги в конец файла
-          cd kernel_source/4.14.186
-          echo "CONFIG_KPROBES=y" >> arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_KPROBES_ON_FTRACE=y" >> arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_HAVE_KPROBES=y" >> arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_KALLSYMS=y" >> arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_KALLSYMS_ALL=y" >> arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_MAC80211=y" >> arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_CFG80211=y" >> arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_USB_G_HID=y" >> arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_BINFMT_MISC=y" >> arch/arm64/configs/wp15_defconfig
+          # Добавляем флаги для KernelSU и NetHunter
+          cd kernel/4.14.186
+          {
+            echo "CONFIG_KPROBES=y"
+            echo "CONFIG_KALLSYMS=y"
+            echo "CONFIG_KALLSYMS_ALL=y"
+            echo "CONFIG_MAC80211=y"
+            echo "CONFIG_CFG80211=y"
+            echo "CONFIG_USB_G_HID=y"
+            echo "CONFIG_BINFMT_MISC=y"
+            echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
+          } >> arch/arm64/configs/wp15_defconfig
 
-      - name: Compile Kernel
+      - name: Build Kernel
         run: |
-          export PATH="$GITHUB_WORKSPACE/toolchain/bin:$PATH"
-          cd kernel_source/4.14.186
-          
-          # Генерируем .config из твоего wp15_defconfig
+          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          cd kernel/4.14.186
           make O=out ARCH=arm64 wp15_defconfig
-          
-          # Запускаем сборку на все ядра сервера
           make -j$(nproc --all) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-      - name: Upload Kernel Artifact
+      - name: Package with AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          cp kernel/4.14.186/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cd AnyKernel3 && zip -r9 ../kernel-wp15-signed.zip *
+
+      - name: Upload Result
         uses: actions/upload-artifact@v3
         with:
-          name: WP15-Kernel-Build
-          path: |
-            kernel_source/4.14.186/out/arch/arm64/boot/Image.gz
+          name: WP15-Kernel-Update
+          path: kernel-wp15-signed.zip
             kernel_source/4.14.186/out/arch/arm64/boot/Image.gz-dtb
