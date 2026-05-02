@@ -7,7 +7,7 @@ jobs:
   build:
     runs-on: ubuntu-22.04
     env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Убирает то самое ворчание Гитхаба
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout Config
         uses: actions/checkout@v4
@@ -17,10 +17,10 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf libssl-dev libxml2 libxml2-utils lzop rsync schedtool squashfs-tools zip
 
-      - name: Clone Toolchain
+      - name: Clone Proton Clang (Лучший тулчейн для Android)
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Clone Kernel Source
+      - name: Clone Kernel Source (Новая база Oppo)
         run: git clone --depth=1 https://github.com/whjddzyx/android_kernel_oppo_mtk6853.git kernel
 
       - name: Integrate KernelSU
@@ -32,9 +32,11 @@ jobs:
         run: |
           cp wp15_defconfig kernel/4.14.186/arch/arm64/configs/wp15_defconfig
           cd kernel/4.14.186
-          # 1. Отключаем проверку на отсутствующие файлы драйверов (самый важный фикс!)
+          
+          # Отключаем проблемный драйвер сенсора
           sed -i 's/CONFIG_CUSTOM_KERNEL_IMGSENSOR/# CONFIG_CUSTOM_KERNEL_IMGSENSOR/g' arch/arm64/configs/wp15_defconfig
-          # 2. Добавляем параметры для NetHunter и KSU
+          
+          # Добавляем нужные параметры
           {
             echo "CONFIG_KPROBES=y"
             echo "CONFIG_KALLSYMS=y"
@@ -43,49 +45,36 @@ jobs:
             echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
           } >> arch/arm64/configs/wp15_defconfig
 
-      - name: Download and Setup Toolchains
-        run: |
-          # Скачиваем Clang 10 (6443078) и GCC 4.9 для совместимости
-          git clone --depth=1 https://github.com/techyminati/android_prebuilts_clang_host_linux-x86_clang-6443078.git clang
-          git clone --depth=1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
-          git clone --depth=1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
-
       - name: Build Kernel
         run: |
-          # 1. Настройка путей
-          CLANG_BIN=$GITHUB_WORKSPACE/clang/bin
-          GCC64_BIN=$GITHUB_WORKSPACE/gcc64/bin
-          GCC32_BIN=$GITHUB_WORKSPACE/gcc32/bin
-          export PATH=$CLANG_BIN:$GCC64_BIN:$GCC32_BIN:$PATH
-          
-          # 2. Создаем симлинк для assembler используя llvm-as вместо clang
-          ln -sf $CLANG_BIN/llvm-as $GCC64_BIN/aarch64-linux-android-as
+          # Подключаем Proton Clang
+          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           
           cd kernel/4.14.186
           
-          # 3. Очистка и конфиг
+          # Очистка и конфиг
           make O=out ARCH=arm64 wp15_defconfig
           
-          # 4. Основная сборка
+          # Сборка без симлинков, просто заставляем использовать Clang
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            AS=clang \
             LD=ld.lld \
             AR=llvm-ar \
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM_IAS=1 \
-      
             KCFLAGS="-Wno-error"
+
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
-          cp kernel/4.14.186/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cp kernel/4.14.186/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ || echo "Image.gz-dtb не найден, проверь логи сборки!"
           cd AnyKernel3 && zip -r9 ../kernel-wp15-signed.zip *
 
       - name: Upload Result
