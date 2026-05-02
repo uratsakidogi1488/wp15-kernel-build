@@ -58,8 +58,8 @@ jobs:
           GCC32_BIN=$GITHUB_WORKSPACE/gcc32/bin
           export PATH=$CLANG_BIN:$GCC64_BIN:$GCC32_BIN:$PATH
           
-          # 2. Создаем симлинк, чтобы обмануть скрипты VDSO (решаем ошибку -EL)
-          ln -sf $CLANG_BIN/clang $GCC64_BIN/aarch64-linux-android-as
+          # 2. Создаем симлинк для assembler используя llvm-as вместо clang
+          ln -sf $CLANG_BIN/llvm-as $GCC64_BIN/aarch64-linux-android-as
           
           cd kernel/4.14.186
           
