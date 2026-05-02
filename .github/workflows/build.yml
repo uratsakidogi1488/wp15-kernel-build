@@ -6,21 +6,21 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
-      - name: Checkout Config
+      - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf libssl-dev libxml2 libxml2-utils lzop rsync schedtool squashfs-tools zip
+          sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf libssl-dev libxml2 libxml2-utils lzop rsync schedtool squashfs-tools zip binutils-aarch64-linux-gnu
 
-      - name: Clone Proton Clang (Лучший тулчейн для Android)
+      - name: Clone Toolchain
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
 
-      - name: Clone Kernel Source (Новая база Oppo)
+      - name: Clone Kernel Source
         run: git clone --depth=1 https://github.com/whjddzyx/android_kernel_oppo_mtk6853.git kernel
 
       - name: Integrate KernelSU
@@ -28,22 +28,15 @@ jobs:
           cd kernel/4.14.186
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-      - name: Fix Source and Config
+      - name: Prepare Defconfig
         run: |
           cp wp15_defconfig kernel/4.14.186/arch/arm64/configs/wp15_defconfig
           cd kernel/4.14.186
-          
-          # 1. Отключаем проблемный IMGSENSOR (уже было)
+          # Отключаем проблемные модули и настраиваем параметры
           sed -i 's/CONFIG_CUSTOM_KERNEL_IMGSENSOR/ # CONFIG_CUSTOM_KERNEL_IMGSENSOR/g' arch/arm64/configs/wp15_defconfig
-          
-          # 2. НОВОЕ: Отключаем Trusty и MTEE (часто вызывают Ошибку 2 на кастомных билдах)
           sed -i 's/CONFIG_MICROTRUST_TEE=y/CONFIG_MICROTRUST_TEE=n/g' arch/arm64/configs/wp15_defconfig
           sed -i 's/CONFIG_TRUSTY=y/CONFIG_TRUSTY=n/g' arch/arm64/configs/wp15_defconfig
-          
-          # 3. НОВОЕ: Фикс для GPU (если ругается на несоответствие платформы)
           echo "CONFIG_MALI_PLATFORM_THIRDPARTY_NAME=\"mt6853\"" >> arch/arm64/configs/wp15_defconfig
-          
-          # 4. Параметры для NetHunter и KSU
           {
             echo "CONFIG_KPROBES=y"
             echo "CONFIG_KALLSYMS=y"
@@ -51,19 +44,42 @@ jobs:
             echo "CONFIG_USB_G_HID=y"
             echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
           } >> arch/arm64/configs/wp15_defconfig
-          
+
       - name: Build Kernel
         run: |
-          # Подключаем Proton Clang
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
-          
           cd kernel/4.14.186
-          
-          # Очистка и конфиг
           make O=out ARCH=arm64 wp15_defconfig
           
-          # Сборка без симлинков, просто заставляем использовать Clang
+          # Сборка с исправлением ошибки -EL через LLVM_IAS и системный AS
           make -j$(nproc --all) O=out \
+            ARCH=arm64 \
+            CC=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
+            AS=aarch64-linux-gnu-as
+
+      - name: Package with AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          cp kernel/4.14.186/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          cd AnyKernel3 && zip -r9 ../kernel-wp15-signed.zip *
+
+      - name: Upload Result
+        uses: actions/upload-artifact@v4
+        with:
+          name: WP15-Kernel-Update
+          path: kernel-wp15-signed.zip
+           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
             AS=clang \
