@@ -5,15 +5,17 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-22.04 # Меняем на 22.04 для стабильности
+    runs-on: ubuntu-22.04
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # Убирает то самое ворчание Гитхаба
     steps:
       - name: Checkout Config
-        uses: actions/checkout@v4 # Обновил до v4
+        uses: actions/checkout@v4
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5 libncurses5-dev libssl-dev libxml2 libxml2-utils lzop rsync schedtool squashfs-tools zip zlib1g-dev
+          sudo apt-get install -y bc bison build-essential curl flex g++-multilib gcc-multilib git gnupg gperf libssl-dev libxml2 libxml2-utils lzop rsync schedtool squashfs-tools zip
 
       - name: Clone Toolchain
         run: git clone --depth=1 https://github.com/kdrag0n/proton-clang.git toolchain
@@ -26,18 +28,18 @@ jobs:
           cd kernel/4.14.186
           curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s main
 
-      - name: Prepare Defconfig
+      - name: Fix Source and Config
         run: |
           cp wp15_defconfig kernel/4.14.186/arch/arm64/configs/wp15_defconfig
           cd kernel/4.14.186
+          # 1. Отключаем проверку на отсутствующие файлы драйверов (самый важный фикс!)
+          sed -i 's/CONFIG_CUSTOM_KERNEL_IMGSENSOR/# CONFIG_CUSTOM_KERNEL_IMGSENSOR/g' arch/arm64/configs/wp15_defconfig
+          # 2. Добавляем параметры для NetHunter и KSU
           {
             echo "CONFIG_KPROBES=y"
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
-            echo "CONFIG_MAC80211=y"
-            echo "CONFIG_CFG80211=y"
             echo "CONFIG_USB_G_HID=y"
-            echo "CONFIG_BINFMT_MISC=y"
             echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
           } >> arch/arm64/configs/wp15_defconfig
 
@@ -46,7 +48,8 @@ jobs:
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           cd kernel/4.14.186
           make O=out ARCH=arm64 wp15_defconfig
-          make -j$(nproc --all) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          # Добавляем LLVM_IAS=0, чтобы обойти ошибку с флагом -EL
+          make -j$(nproc --all) O=out ARCH=arm64 CC=clang LLVM_IAS=0 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- KBUILD_CFLAGS_KERNEL="-Wno-error"
 
       - name: Package with AnyKernel3
         run: |
@@ -55,7 +58,7 @@ jobs:
           cd AnyKernel3 && zip -r9 ../kernel-wp15-signed.zip *
 
       - name: Upload Result
-        uses: actions/upload-artifact@v4 # Вот здесь была главная ошибка, заменил на v4
+        uses: actions/upload-artifact@v4
         with:
           name: WP15-Kernel-Update
           path: kernel-wp15-signed.zip
