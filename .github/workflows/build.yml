@@ -53,19 +53,18 @@ jobs:
             echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
           } >> arch/arm64/configs/wp15_defconfig
 
-      - name: Build Kernel
+            - name: Build Kernel
         run: |
+          # 1. Прописываем путь к тулчейну
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          
+          # 2. Устанавливаем системный ассемблер (он понимает -EL)
+          sudo apt-get update && sudo apt-get install -y binutils-aarch64-linux-gnu
+          
           cd kernel/4.14.186
-          
-          # Сначала чистим
-          make O=out ARCH=arm64 clean
-          make O=out ARCH=arm64 mrproper
-          
-          # Конфигурируем
           make O=out ARCH=arm64 wp15_defconfig
           
-          # Собираем с использованием LLVM и подмененного ассемблера
+          # 3. Сборка. Ключевой момент: перенаправляем AS на системный
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
@@ -76,6 +75,7 @@ jobs:
             LLVM_IAS=0 \
             AS=aarch64-linux-gnu-as \
             LD=ld.lld
+
 
       - name: Package with AnyKernel3
         run: |
