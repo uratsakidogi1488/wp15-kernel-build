@@ -1,14 +1,14 @@
 name: Build WP15 Kernel + KSU + NetHunter
 
 on:
-  workflow_dispatch: # Запуск вручную кнопкой
+  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # Меняем на 22.04 для стабильности
     steps:
       - name: Checkout Config
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Обновил до v4
 
       - name: Install Dependencies
         run: |
@@ -28,10 +28,7 @@ jobs:
 
       - name: Prepare Defconfig
         run: |
-          # Копируем твой файл из корня репо в папку ядра
           cp wp15_defconfig kernel/4.14.186/arch/arm64/configs/wp15_defconfig
-          
-          # Добавляем флаги для KernelSU и NetHunter
           cd kernel/4.14.186
           {
             echo "CONFIG_KPROBES=y"
@@ -58,8 +55,7 @@ jobs:
           cd AnyKernel3 && zip -r9 ../kernel-wp15-signed.zip *
 
       - name: Upload Result
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # Вот здесь была главная ошибка, заменил на v4
         with:
           name: WP15-Kernel-Update
           path: kernel-wp15-signed.zip
-            kernel_source/4.14.186/out/arch/arm64/boot/Image.gz-dtb
