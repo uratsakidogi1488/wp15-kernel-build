@@ -1,4 +1,4 @@
-name: Build WP15 Kernel + KSU + NetHunter
+name: Build WP15 Kernel (Force Fix)
 
 on:
   workflow_dispatch:
@@ -23,6 +23,15 @@ jobs:
       - name: Clone Kernel Source
         run: git clone --depth=1 https://github.com/whjddzyx/android_kernel_oppo_mtk6853.git kernel
 
+      - name: Force Fix Assembler (EL Error Fix)
+        run: |
+          # Этот шаг заменяет кривой ассемблер в тулчейне на нормальный системный
+          # Находим все исполняемые файлы 'as' в папке тулчейна и подменяем их
+          REAL_AS=$(which aarch64-linux-gnu-as)
+          find $GITHUB_WORKSPACE/toolchain -name "aarch64-linux-gnu-as" -exec ln -sf $REAL_AS {} \;
+          find $GITHUB_WORKSPACE/toolchain -name "as" -exec ln -sf $REAL_AS {} \;
+          echo "Assembler replaced with system version: $REAL_AS"
+
       - name: Integrate KernelSU
         run: |
           cd kernel/4.14.186
@@ -32,16 +41,15 @@ jobs:
         run: |
           cp wp15_defconfig kernel/4.14.186/arch/arm64/configs/wp15_defconfig
           cd kernel/4.14.186
-          # Отключаем проблемные модули и настраиваем параметры
           sed -i 's/CONFIG_CUSTOM_KERNEL_IMGSENSOR/ # CONFIG_CUSTOM_KERNEL_IMGSENSOR/g' arch/arm64/configs/wp15_defconfig
           sed -i 's/CONFIG_MICROTRUST_TEE=y/CONFIG_MICROTRUST_TEE=n/g' arch/arm64/configs/wp15_defconfig
           sed -i 's/CONFIG_TRUSTY=y/CONFIG_TRUSTY=n/g' arch/arm64/configs/wp15_defconfig
-          echo "CONFIG_MALI_PLATFORM_THIRDPARTY_NAME=\"mt6853\"" >> arch/arm64/configs/wp15_defconfig
           {
             echo "CONFIG_KPROBES=y"
             echo "CONFIG_KALLSYMS=y"
             echo "CONFIG_KALLSYMS_ALL=y"
             echo "CONFIG_USB_G_HID=y"
+            echo "CONFIG_MALI_PLATFORM_THIRDPARTY_NAME=\"mt6853\""
             echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
           } >> arch/arm64/configs/wp15_defconfig
 
@@ -49,9 +57,15 @@ jobs:
         run: |
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           cd kernel/4.14.186
+          
+          # Сначала чистим
+          make O=out ARCH=arm64 clean
+          make O=out ARCH=arm64 mrproper
+          
+          # Конфигурируем
           make O=out ARCH=arm64 wp15_defconfig
           
-          # Сборка с исправлением ошибки -EL через LLVM_IAS и системный AS
+          # Собираем с использованием LLVM и подмененного ассемблера
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
@@ -59,49 +73,22 @@ jobs:
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM=1 \
-            LLVM_IAS=1 \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            AS=aarch64-linux-gnu-as
+            LLVM_IAS=0 \
+            AS=aarch64-linux-gnu-as \
+            LD=ld.lld
 
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
-          cp kernel/4.14.186/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
-          cd AnyKernel3 && zip -r9 ../kernel-wp15-signed.zip *
+          if [ -f kernel/4.14.186/out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp kernel/4.14.186/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/
+          else
+            cp kernel/4.14.186/out/arch/arm64/boot/Image AnyKernel3/
+          fi
+          cd AnyKernel3 && zip -r9 ../kernel-wp15-build.zip *
 
       - name: Upload Result
         uses: actions/upload-artifact@v4
         with:
-          name: WP15-Kernel-Update
-          path: kernel-wp15-signed.zip
-           make -j$(nproc --all) O=out \
-            ARCH=arm64 \
-            CC=clang \
-            AS=clang \
-            LD=ld.lld \
-            AR=llvm-ar \
-            NM=llvm-nm \
-            OBJCOPY=llvm-objcopy \
-            OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            LLVM_IAS=1 \
-            KCFLAGS="-Wno-error"
-
-      - name: Package with AnyKernel3
-        run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
-          cp kernel/4.14.186/out/arch/arm64/boot/Image.gz-dtb AnyKernel3/ || echo "Image.gz-dtb не найден, проверь логи сборки!"
-          cd AnyKernel3 && zip -r9 ../kernel-wp15-signed.zip *
-
-      - name: Upload Result
-        uses: actions/upload-artifact@v4
-        with:
-          name: WP15-Kernel-Update
-          path: kernel-wp15-signed.zip
+          name: WP15-Kernel
+          path: kernel-wp15-build.zip
