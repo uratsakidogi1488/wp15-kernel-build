@@ -43,34 +43,45 @@ jobs:
             echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
           } >> arch/arm64/configs/wp15_defconfig
 
+      - name: Download and Setup Toolchains
+        run: |
+          # Скачиваем Clang 10 (6443078) и GCC 4.9 для совместимости
+          git clone --depth=1 https://github.com/techyminati/android_prebuilts_clang_host_linux-x86_clang-6443078.git clang
+          git clone --depth=1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9.git gcc64
+          git clone --depth=1 https://github.com/lineageos/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9.git gcc32
+
       - name: Build Kernel
         run: |
-          export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
+          # 1. Настройка путей
+          CLANG_BIN=$GITHUB_WORKSPACE/clang/bin
+          GCC64_BIN=$GITHUB_WORKSPACE/gcc64/bin
+          GCC32_BIN=$GITHUB_WORKSPACE/gcc32/bin
+          export PATH=$CLANG_BIN:$GCC64_BIN:$GCC32_BIN:$PATH
+          
+          # 2. Создаем симлинк, чтобы обмануть скрипты VDSO (решаем ошибку -EL)
+          ln -sf $CLANG_BIN/clang $GCC64_BIN/aarch64-linux-android-as
+          
           cd kernel/4.14.186
           
-          # Генерируем конфиг
+          # 3. Очистка и конфиг
           make O=out ARCH=arm64 wp15_defconfig
           
-          # ПРИНУДИТЕЛЬНАЯ ПОДМЕНА:
-          # Мы заставляем ядро использовать встроенный ассемблер Clang (LLVM_IAS=1)
-          # И явно прописываем AS=clang для тех подмодулей (как VDSO), которые капризничают
+          # 4. Основная сборка
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
-            AS=clang \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
             LD=ld.lld \
             AR=llvm-ar \
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            LLVM=1 \
             LLVM_IAS=1 \
-            KBUILD_COMPILER_STRING="Clang-13-WP15"
-  
+      
+            KCFLAGS="-Wno-error"
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
