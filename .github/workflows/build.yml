@@ -53,7 +53,7 @@ jobs:
             echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
           } >> arch/arm64/configs/wp15_defconfig
 
-            - name: Build Kernel
+      - name: Build Kernel
         run: |
           # 1. Прописываем путь к тулчейну
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
