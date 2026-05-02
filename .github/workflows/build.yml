@@ -33,10 +33,17 @@ jobs:
           cp wp15_defconfig kernel/4.14.186/arch/arm64/configs/wp15_defconfig
           cd kernel/4.14.186
           
-          # Отключаем проблемный драйвер сенсора
-          sed -i 's/CONFIG_CUSTOM_KERNEL_IMGSENSOR/# CONFIG_CUSTOM_KERNEL_IMGSENSOR/g' arch/arm64/configs/wp15_defconfig
+          # 1. Отключаем проблемный IMGSENSOR (уже было)
+          sed -i 's/CONFIG_CUSTOM_KERNEL_IMGSENSOR/ # CONFIG_CUSTOM_KERNEL_IMGSENSOR/g' arch/arm64/configs/wp15_defconfig
           
-          # Добавляем нужные параметры
+          # 2. НОВОЕ: Отключаем Trusty и MTEE (часто вызывают Ошибку 2 на кастомных билдах)
+          sed -i 's/CONFIG_MICROTRUST_TEE=y/CONFIG_MICROTRUST_TEE=n/g' arch/arm64/configs/wp15_defconfig
+          sed -i 's/CONFIG_TRUSTY=y/CONFIG_TRUSTY=n/g' arch/arm64/configs/wp15_defconfig
+          
+          # 3. НОВОЕ: Фикс для GPU (если ругается на несоответствие платформы)
+          echo "CONFIG_MALI_PLATFORM_THIRDPARTY_NAME=\"mt6853\"" >> arch/arm64/configs/wp15_defconfig
+          
+          # 4. Параметры для NetHunter и KSU
           {
             echo "CONFIG_KPROBES=y"
             echo "CONFIG_KALLSYMS=y"
@@ -44,7 +51,7 @@ jobs:
             echo "CONFIG_USB_G_HID=y"
             echo "CONFIG_SECTION_MISMATCH_WARN_ONLY=y"
           } >> arch/arm64/configs/wp15_defconfig
-
+          
       - name: Build Kernel
         run: |
           # Подключаем Proton Clang
