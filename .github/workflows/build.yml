@@ -45,29 +45,36 @@ jobs:
 
       - name: Build Kernel
         run: |
+          # Устанавливаем пути
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           cd kernel/4.14.186
           
-          # Очистка и создание конфига
-          make O=out ARCH=arm64 wp15_defconfig
-          make -j$(nproc --all) O=out \
-
+          # Очистка перед новой попыткой
+          rm -rf out
+          mkdir out
           
-          # Основная сборка с жестким указанием инструментов
+          # 1. Генерируем конфиг (ЯВНО указываем ARCH)
+          make O=out ARCH=arm64 wp15_defconfig
+          
+          # 2. Сама сборка
+          # Мы заменяем GCC на Clang и принудительно отключаем поиск старого GCC
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
             CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            AS=clang \
             LD=ld.lld \
             AR=llvm-ar \
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
-            STRIP=llvm-strip
+            STRIP=llvm-strip \
+            LLVM=1 \
+            LLVM_IAS=1 \
+            DTC_EXT=dtc \
+            HOSTCC=gcc \
+            HOSTCXX=g++
   
       - name: Package with AnyKernel3
         run: |
