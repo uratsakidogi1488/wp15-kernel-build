@@ -45,36 +45,31 @@ jobs:
 
       - name: Build Kernel
         run: |
-          # Устанавливаем пути
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           cd kernel/4.14.186
           
-          # Очистка перед новой попыткой
-          rm -rf out
-          mkdir out
-          
-          # 1. Генерируем конфиг (ЯВНО указываем ARCH)
+          # Генерируем конфиг
           make O=out ARCH=arm64 wp15_defconfig
           
-          # 2. Сама сборка
-          # Мы заменяем GCC на Clang и принудительно отключаем поиск старого GCC
+          # ПРИНУДИТЕЛЬНАЯ ПОДМЕНА:
+          # Мы заставляем ядро использовать встроенный ассемблер Clang (LLVM_IAS=1)
+          # И явно прописываем AS=clang для тех подмодулей (как VDSO), которые капризничают
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            AS=clang \
             LD=ld.lld \
             AR=llvm-ar \
             NM=llvm-nm \
             OBJCOPY=llvm-objcopy \
             OBJDUMP=llvm-objdump \
             STRIP=llvm-strip \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
             LLVM=1 \
             LLVM_IAS=1 \
-            DTC_EXT=dtc \
-            HOSTCC=gcc \
-            HOSTCXX=g++
+            KBUILD_COMPILER_STRING="Clang-13-WP15"
   
       - name: Package with AnyKernel3
         run: |
