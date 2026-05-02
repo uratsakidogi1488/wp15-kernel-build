@@ -58,19 +58,29 @@ jobs:
           export PATH=$GITHUB_WORKSPACE/toolchain/bin:$PATH
           cd kernel/4.14.186
           
-          # Убираем -EL из всех конфигов сборки ядра
+          # Очистка и удаление проблемного флага -EL (если он остался)
           find . -type f -name "Makefile*" -exec sed -i 's/-EL//g' {} +
           
           make O=out ARCH=arm64 wp15_defconfig
           
+          # Сборка с явным указанием хост-инструментов и встроенного ассемблера
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
+            HOSTCC=clang \
+            HOSTCXX=clang++ \
+            HOSTAS=llvm-as \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM=1 \
-            LLVM_IAS=0 \
-            AS=aarch64-linux-gnu-as
+            LLVM_IAS=1 \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip
 
 
       - name: Package with AnyKernel3
