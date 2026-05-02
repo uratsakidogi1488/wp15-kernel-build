@@ -51,15 +51,23 @@ jobs:
           # Очистка и создание конфига
           make O=out ARCH=arm64 wp15_defconfig
           
-          # Основная сборка с исправлением ошибки -EL
+          # Основная сборка с жестким указанием инструментов
           make -j$(nproc --all) O=out \
             ARCH=arm64 \
             CC=clang \
+            LD=ld.lld \
+            AR=llvm-ar \
+            NM=llvm-nm \
+            OBJCOPY=llvm-objcopy \
+            OBJDUMP=llvm-objdump \
+            STRIP=llvm-strip \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
             LLVM_IAS=1 \
+            AS=clang \
             KBUILD_CFLAGS_KERNEL="-Wno-error"
+     
       - name: Package with AnyKernel3
         run: |
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
